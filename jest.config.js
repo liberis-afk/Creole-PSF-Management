@@ -1,11 +1,14 @@
-/** Tests unitaires backend : services isolés avec Prisma mocké (aucune base requise). */
-module.exports = {
-  moduleFileExtensions: ['js', 'json', 'ts'],
-  rootDir: 'src',
-  testRegex: '.*\\.spec\\.ts$',
-  transform: { '^.+\\.(t|j)s$': 'ts-jest' },
-  collectCoverageFrom: ['**/*.(t|j)s'],
-  coverageDirectory: '../coverage',
-  testEnvironment: 'node',
-  moduleNameMapper: { '^@prisma/client$': '@prisma/client' },
+const nextJest = require('next/jest');
+
+// next/jest charge next.config.js + .env et gère la transfo TS/JSX.
+const createJestConfig = nextJest({ dir: './' });
+
+/** @type {import('jest').Config} */
+const config = {
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
+  testEnvironment: 'jest-environment-jsdom',
+  moduleNameMapper: { '^@/(.*)$': '<rootDir>/$1' },
+  testPathIgnorePatterns: ['<rootDir>/node_modules/', '<rootDir>/.next/'],
 };
+
+module.exports = createJestConfig(config);
