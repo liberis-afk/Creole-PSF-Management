@@ -1,0 +1,1445 @@
+// ============================================================================
+// CREOLE PSF MANAGE — SCHÉMA DE BASE DE DONNÉES
+// Version 1.0
+//
+// Convention générale :
+//   - id            : cuid() — identifiant public non séquentiel (évite l'énumération)
+//   - createdAt      : horodatage de création, toujours présent
+//   - updatedAt      : horodatage de dernière modification (tables mutables)
+//   - fermeId        : clé d'isolation multi-tenant, présente sur toute table métier
+//   - Champs monétaires : Decimal(14,2)
+//   - Champs quantité/superficie : Decimal(14,3)
+//
+// Isolation multi-tenant : la colonne fermeId est le premier rempart (appliqué
+// par TenancyGuard côté NestJS). Le Row-Level Security PostgreSQL (second
+// rempart, voir doc Sécurité) N'EST PAS déclarable en Prisma — il est ajouté
+// via une migration SQL manuelle (voir documentation-base-de-donnees.md, §0).
+//
+// Relations polymorphes (Document, Notification, JournalAudit, Transaction) :
+// Prisma ne supporte pas nativement les FK polymorphes. On utilise un couple
+// (entiteType, entiteId) SANS contrainte de clé étrangère native — la
+// cohérence est garantie par la couche Service, pas par la base. C'est un
+// compromis assumé et documenté (voir §5.2 de l'architecture).
+// ============================================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis]
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum StatutUtilisateur {
+  ACTIF
+  INACTIF
+  SUSPENDU
+}
+
+enum StatutInvitation {
+  EN_ATTENTE
+  ACCEPTEE
+  EXPIREE
+  REVOQUEE
+}
+
+enum TypeEvenementSecurite {
+  CONNEXION_REUSSIE
+  CONNEXION_ECHOUEE
+  DECONNEXION
+  MOT_DE_PASSE_MODIFIE
+  MOT_DE_PASSE_RESET_DEMANDE
+  DEUX_FA_ACTIVE
+  DEUX_FA_DESACTIVE
+  PERMISSION_MODIFIEE
+  COMPTE_SUSPENDU
+  COMPTE_REACTIVE
+}
+
+enum ActionAudit {
+  CREATION
+  MODIFICATION
+  SUPPRESSION
+}
+
+enum StatutParcelle {
+  ACTIVE
+  EN_JACHERE
+  INACTIVE
+}
+
+enum TypeDrainage {
+  BON
+  MOYEN
+  FAIBLE
+  STAGNANT
+}
+
+enum StatutCulture {
+  PLANIFIEE
+  ACTIVE
+  RECOLTEE
+  ABANDONNEE
+}
+
+enum StadeVegetatif {
+  GERMINATION
+  CROISSANCE
+  FLORAISON
+  FRUCTIFICATION
+  MATURITE
+  RECOLTE
+}
+
+enum EtatSante {
+  BONNE
+  MOYENNE
+  MAUVAISE
+  CRITIQUE
+}
+
+enum TypeTraitement {
+  HERBICIDE
+  INSECTICIDE
+  FONGICIDE
+  FERTILISANT
+  AUTRE
+}
+
+enum TypeActivite {
+  PLANTATION
+  SEMIS
+  FERTILISATION
+  IRRIGATION
+  DESHERBAGE
+  PULVERISATION
+  RECOLTE
+  TRANSPORT
+  MAINTENANCE
+  AUTRE
+}
+
+enum PrioriteActivite {
+  BASSE
+  NORMALE
+  HAUTE
+  URGENTE
+}
+
+enum StatutActivite {
+  PLANIFIEE
+  EN_COURS
+  TERMINEE
+  ANNULEE
+  EN_RETARD
+}
+
+enum TypeContrat {
+  CDI
+  CDD
+  JOURNALIER
+  SAISONNIER
+  PRESTATAIRE
+}
+
+enum StatutEmploye {
+  ACTIF
+  INACTIF
+  CONGE
+  LICENCIE
+}
+
+enum StatutPresence {
+  PRESENT
+  ABSENT
+  RETARD
+  CONGE
+  JOUR_FERIE
+}
+
+enum TypeConge {
+  CONGE_PAYE
+  MALADIE
+  SANS_SOLDE
+  MATERNITE_PATERNITE
+  AUTRE
+}
+
+enum StatutConge {
+  EN_ATTENTE
+  APPROUVE
+  REFUSE
+  ANNULE
+}
+
+enum StatutPaiement {
+  EN_ATTENTE
+  PARTIEL
+  PAYE
+  EN_RETARD
+  ANNULE
+}
+
+enum MethodePaiement {
+  ESPECES
+  VIREMENT
+  CHEQUE
+  MOBILE_MONEY
+  AUTRE
+}
+
+enum TypeEquipement {
+  TRACTEUR
+  CAMION
+  MOTO
+  POMPE
+  GENERATEUR
+  OUTIL
+  SYSTEME_IRRIGATION
+  AUTRE
+}
+
+enum StatutEquipement {
+  OPERATIONNEL
+  EN_PANNE
+  EN_MAINTENANCE
+  HORS_SERVICE
+}
+
+enum TypeEntretien {
+  PREVENTIF
+  CORRECTIF
+}
+
+enum EtatEquipement {
+  NEUF
+  BON
+  MOYEN
+  EN_PANNE
+}
+
+enum StatutEntretien {
+  PLANIFIE
+  EN_COURS
+  TERMINE
+}
+
+enum TypeCategorieStock {
+  SEMENCES
+  FERTILISANTS
+  HERBICIDES
+  INSECTICIDES
+  FONGICIDES
+  PIECES
+  CARBURANT
+  MATERIEL
+  AUTRE
+}
+
+enum TypeMouvementStock {
+  ENTREE
+  SORTIE
+  AJUSTEMENT
+  PERTE
+}
+
+enum NiveauAlerteStock {
+  BAS
+  CRITIQUE
+  RUPTURE
+}
+
+enum TypeTransaction {
+  RECETTE
+  DEPENSE
+}
+
+enum TypeIrrigation {
+  GRAVITE
+  GOUTTE_A_GOUTTE
+  ASPERSION
+}
+
+enum StatutSystemeIrrigation {
+  ACTIF
+  INACTIF
+  EN_MAINTENANCE
+}
+
+enum DestinationRecolte {
+  VENTE
+  TRANSFORMATION
+  STOCK
+  PERTE
+  AUTOCONSOMMATION
+}
+
+enum StatutCommande {
+  EN_ATTENTE
+  CONFIRMEE
+  EN_LIVRAISON
+  LIVREE
+  ANNULEE
+}
+
+enum TypeDocument {
+  CONTRAT
+  FACTURE
+  RAPPORT
+  PHOTO
+  PLAN
+  ANALYSE_SOL
+  DOCUMENT_RH
+  AUTRE
+}
+
+enum EntiteDocument {
+  FERME
+  PARCELLE
+  CULTURE
+  EMPLOYE
+  EQUIPEMENT
+  RECOLTE
+  COMMANDE
+  ACTIVITE
+  UTILISATEUR
+}
+
+enum TypeNotification {
+  ACTIVITE
+  STOCK_FAIBLE
+  ENTRETIEN
+  PAIEMENT
+  RECOLTE
+  ECHEANCE
+  SECURITE
+  AUTRE
+}
+
+enum FormatExport {
+  PDF
+  EXCEL
+  CSV
+}
+
+enum TypeRapport {
+  PRODUCTION
+  FINANCES
+  STOCKS
+  EMPLOYES
+  IRRIGATION
+  RECOLTES
+  VENTES
+  EQUIPEMENTS
+  PARCELLES
+}
+
+enum StatutSyncMobile {
+  SYNCHRONISE
+  EN_ATTENTE
+  CONFLIT
+}
+
+// ============================================================================
+// MODULE 1 — AUTHENTIFICATION, RBAC, SÉCURITÉ
+// ============================================================================
+
+model Utilisateur {
+  id                  String            @id @default(cuid())
+  email               String            @unique
+  motDePasseHash      String
+  prenom              String
+  nom                 String
+  telephone           String?
+  avatarUrl           String?
+  statut              StatutUtilisateur @default(ACTIF)
+  deuxFAActif         Boolean           @default(false)
+  deuxFASecretChiffre String?
+  langue              String            @default("fr")
+  derniereConnexionA  DateTime?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  affectationsFerme    FermeUtilisateur[]
+  sessions             SessionConnexion[]
+  journauxSecurite     JournalSecurite[]
+  journauxAudit        JournalAudit[]         @relation("AuteurAudit")
+  notifications        Notification[]
+  documentsUploades     Document[]             @relation("UploadeurDocument")
+  activitesResponsable CalendrierActivite[]   @relation("ResponsableActivite")
+  commentairesActivite CommentaireActivite[]  @relation("AuteurCommentaireActivite")
+  appareilsMobiles     AppareilMobile[]
+  rapportsGeneres      RapportExport[]
+
+  @@map("utilisateurs")
+}
+
+/// Rôle : soit un gabarit système (fermeId = null, non supprimable),
+/// soit un rôle personnalisé créé par une ferme.
+model Role {
+  id        String   @id @default(cuid())
+  fermeId   String?
+  nom       String
+  description String?
+  estSysteme Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ferme            Ferme?             @relation(fields: [fermeId], references: [id], onDelete: Cascade)
+  permissions      RolePermission[]
+  affectations     FermeUtilisateur[]
+
+  @@unique([fermeId, nom])
+  @@index([fermeId])
+  @@map("roles")
+}
+
+/// Catalogue global des permissions disponibles (ex. "finances.depenses.creer").
+/// Table de référence, non liée à une ferme : la portée par ferme se fait
+/// via RolePermission -> Role.fermeId.
+model Permission {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  module      String
+  description String?
+  createdAt   DateTime @default(now())
+
+  roles RolePermission[]
+
+  @@index([module])
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String @id @default(cuid())
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+/// Table pivot centrale du multi-tenant : elle relie un utilisateur à une
+/// ferme ET lui assigne un rôle pour cette ferme précise. Un utilisateur peut
+/// ainsi être Gestionnaire sur la Ferme A et simple Employé sur la Ferme B.
+model FermeUtilisateur {
+  id            String   @id @default(cuid())
+  fermeId       String
+  utilisateurId String
+  roleId        String
+  statut        StatutInvitation @default(ACCEPTEE)
+  invitePar     String?
+  rejointLe     DateTime @default(now())
+
+  ferme       Ferme       @relation(fields: [fermeId], references: [id], onDelete: Cascade)
+  utilisateur Utilisateur @relation(fields: [utilisateurId], references: [id], onDelete: Cascade)
+  role        Role        @relation(fields: [roleId], references: [id])
+
+  @@unique([fermeId, utilisateurId])
+  @@index([utilisateurId])
+  @@index([roleId])
+  @@map("ferme_utilisateurs")
+}
+
+/// Sessions actives — permet la révocation à distance (le refresh token JWT
+/// est vérifié contre cette table à chaque renouvellement).
+model SessionConnexion {
+  id                 String    @id @default(cuid())
+  utilisateurId      String
+  refreshTokenHash   String    @unique
+  userAgent          String?
+  adresseIp          String?
+  expireLe           DateTime
+  revoqueeLe         DateTime?
+  createdAt          DateTime  @default(now())
+
+  utilisateur Utilisateur @relation(fields: [utilisateurId], references: [id], onDelete: Cascade)
+
+  @@index([utilisateurId])
+  @@map("sessions_connexion")
+}
+
+/// Journal de sécurité : écriture seule, non modifiable depuis l'application.
+model JournalSecurite {
+  id            String                 @id @default(cuid())
+  utilisateurId String?
+  fermeId       String?
+  typeEvenement TypeEvenementSecurite
+  adresseIp     String?
+  userAgent     String?
+  metadonnees   Json?
+  createdAt     DateTime               @default(now())
+
+  utilisateur Utilisateur? @relation(fields: [utilisateurId], references: [id], onDelete: SetNull)
+  ferme       Ferme?       @relation(fields: [fermeId], references: [id], onDelete: SetNull)
+
+  @@index([utilisateurId])
+  @@index([fermeId])
+  @@index([typeEvenement])
+  @@index([createdAt])
+  @@map("journal_securite")
+}
+
+/// Journal d'audit métier générique : trace toute création/modification/
+/// suppression sur les entités sensibles, alimenté automatiquement par un
+/// middleware Prisma (pas de saisie manuelle module par module).
+model JournalAudit {
+  id           String      @id @default(cuid())
+  fermeId      String?
+  auteurId     String?
+  typeEntite   String
+  entiteId     String
+  action       ActionAudit
+  ancienneValeur Json?
+  nouvelleValeur Json?
+  createdAt    DateTime    @default(now())
+
+  ferme  Ferme?       @relation(fields: [fermeId], references: [id], onDelete: SetNull)
+  auteur Utilisateur? @relation("AuteurAudit", fields: [auteurId], references: [id], onDelete: SetNull)
+
+  @@index([fermeId])
+  @@index([typeEntite, entiteId])
+  @@index([createdAt])
+  @@map("journal_audit")
+}
+
+// ============================================================================
+// MULTI-TENANT & PARAMÈTRES (MODULE 17)
+// ============================================================================
+
+model Ferme {
+  id           String   @id @default(cuid())
+  nom          String
+  raisonSociale String?
+  code         String   @unique
+  adresse      String?
+  ville        String?
+  pays         String   @default("Haïti")
+  fuseauHoraire String  @default("America/Port-au-Prince")
+  devise       String   @default("HTG")
+  langue       String   @default("fr")
+  logoUrl      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  affectationsUtilisateur FermeUtilisateur[]
+  roles                   Role[]
+  parametres              Parametre[]
+  journauxSecurite        JournalSecurite[]
+  journauxAudit           JournalAudit[]
+
+  parcelles          Parcelle[]
+  cultures           Culture[]
+  activites          CalendrierActivite[]
+  employes           Employe[]
+  presences          Presence[]
+  equipements        Equipement[]
+  categoriesStock    CategorieStock[]
+  articlesStock      ArticleStock[]
+  categoriesFinance  CategorieFinanciere[]
+  transactions       Transaction[]
+  budgets            Budget[]
+  systemesIrrigation SystemeIrrigation[]
+  recoltes           Recolte[]
+  clients            Client[]
+  commandes          Commande[]
+  documents          Document[]
+  notifications      Notification[]
+  rapportsExport     RapportExport[]
+  paiementsEmployes  PaiementEmploye[]
+
+  @@map("fermes")
+}
+
+/// Paramètres extensibles clé/valeur (langue, devise, fréquence de
+/// sauvegarde, options d'affichage...) sans migration à chaque nouveau
+/// paramètre. Les paramètres structurants (devise, langue, fuseau horaire)
+/// sont dupliqués en colonnes typées sur Ferme pour un accès rapide/indexé ;
+/// cette table gère le reste.
+model Parametre {
+  id        String   @id @default(cuid())
+  fermeId   String
+  cle       String
+  valeur    Json
+  updatedAt DateTime @updatedAt
+
+  ferme Ferme @relation(fields: [fermeId], references: [id], onDelete: Cascade)
+
+  @@unique([fermeId, cle])
+  @@map("parametres")
+}
+
+// ============================================================================
+// MODULE 3 — PARCELLES
+// ============================================================================
+
+model Parcelle {
+  id             String          @id @default(cuid())
+  fermeId        String
+  nom            String
+  code           String
+  superficieHa   Decimal         @db.Decimal(14, 3)
+  /// Polygone géoréférencé (PostGIS) — permet ST_Area pour la mesure automatique
+  limites        Unsupported("geometry(Polygon,4326)")?
+  /// Point centroïde pour affichage rapide sur carte sans recalcul du polygone
+  centroide      Unsupported("geography(Point,4326)")?
+  adresse        String?
+  altitude       Decimal?        @db.Decimal(8, 2)
+  typeSol        String?
+  ph             Decimal?        @db.Decimal(4, 2)
+  matiereOrganique Decimal?      @db.Decimal(5, 2)
+  texture        String?
+  drainage       TypeDrainage?
+  statut         StatutParcelle  @default(ACTIVE)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  ferme               Ferme                  @relation(fields: [fermeId], references: [id], onDelete: Cascade)
+  analysesSol         AnalyseSol[]
+  cultures            Culture[]
+  activites           CalendrierActivite[]
+  recoltes            Recolte[]
+  systemesIrrigation  ParcelleSystemeIrrigation[]
+
+  @@unique([fermeId, code])
+  @@index([fermeId])
+  @@index([statut])
+  @@map("parcelles")
+}
+
+model AnalyseSol {
+  id              String   @id @default(cuid())
+  parcelleId      String
+  dateAnalyse     DateTime
+  ph              Decimal? @db.Decimal(4, 2)
+  matiereOrganique Decimal? @db.Decimal(5, 2)
+  azote           Decimal? @db.Decimal(6, 2)
+  phosphore       Decimal? @db.Decimal(6, 2)
+  potassium       Decimal? @db.Decimal(6, 2)
+  texture         String?
+  laboratoire     String?
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  parcelle Parcelle @relation(fields: [parcelleId], references: [id], onDelete: Cascade)
+
+  @@index([parcelleId])
+  @@map("analyses_sol")
+}
+
+// ============================================================================
+// MODULE 4 — CULTURES
+// ============================================================================
+
+model Culture {
+  id                  String        @id @default(cuid())
+  fermeId             String
+  parcelleId          String
+  nom                 String
+  variete             String?
+  espece              String?
+  cycleJours          Int?
+  datePlantation      DateTime
+  dateRecoltePrevue   DateTime?
+  dateRecolteReelle   DateTime?
+  espacementCm        Decimal?      @db.Decimal(8, 2)
+  densite             Decimal?      @db.Decimal(8, 2)
+  population          Int?
+  quantiteSemences    Decimal?      @db.Decimal(10, 3)
+  uniteSemences       String?
+  rendementAttenduKg  Decimal?      @db.Decimal(12, 3)
+  statut              StatutCulture @default(PLANIFIEE)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  ferme       Ferme                @relation(fields: [fermeId], references: [id], onDelete: Cascade)
+  parcelle    Parcelle             @relation(fields: [parcelleId], references: [id], onDelete: Cascade)
+  suivis      SuiviCulture[]
+  traitements TraitementCulture[]
+  recoltes    Recolte[]
+  activites   CalendrierActivite[]
+
+  @@index([fermeId])
+  @@index([parcelleId])
+  @@index([statut])
+  @@map("cultures")
+}
+
+model SuiviCulture {
+  id            String         @id @default(cuid())
+  cultureId     String
+  dateSuivi     DateTime       @default(now())
+  stade         StadeVegetatif
+  etatSante     EtatSante
+  maladies      String[]
+  ravageurs     String[]
+  notes         String?
+  enregistrePar String?
+  createdAt     DateTime       @default(now())
+
+  culture Culture @relation(fields: [cultureId], references: [id], onDelete: Cascade)
+
+  @@index([cultureId])
+  @@index([dateSuivi])
+  @@map("suivis_culture")
+}
+
+model TraitementCulture {
+  id           String         @id @default(cuid())
+  cultureId    String
+  dateTraitement DateTime
+  type         TypeTraitement
+  produit      String
+  dose         Decimal?       @db.Decimal(10, 3)
+  unite        String?
+  appliquePar  String?
+  notes        String?
+  createdAt    DateTime       @default(now())
+
+  culture Culture @relation(fields: [cultureId], references: [id], onDelete: Cascade)
+
+  @@index([cultureId])
+  @@map("traitements_culture")
+}
+
+// ============================================================================
+// MODULE 5 — CALENDRIER AGRICOLE
+// ============================================================================
+
+model CalendrierActivite {
+  id             String            @id @default(cuid())
+  fermeId        String
+  type           TypeActivite
+  titre          String
+  description    String?
+  parcelleId     String?
+  cultureId      String?
+  responsableId  String?
+  priorite       PrioriteActivite  @default(NORMALE)
+  dateProgrammee DateTime
+  dateFin        DateTime?
+  heureProgrammee String?
+  cout           Decimal?          @db.Decimal(14, 2)
+  statut         StatutActivite    @default(PLANIFIEE)
+  termineeLe     DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  ferme       Ferme         @relation(fields: [fermeId], references: [id], onDelete: Cascade)
+  parcelle    Parcelle?     @relation(fields: [parcelleId], references: [id], onDelete: SetNull)
+  culture     Culture?      @relation(fields: [cultureId], references: [id], onDelete: SetNull)
+  responsable Utilisateur?  @relation("ResponsableActivite", fields: [responsableId], references: [id], onDelete: SetNull)
+
+  employesAffectes ActiviteEmploye[]
+  commentaires     CommentaireActivite[]
+  utilisationsEquipement UtilisationEquipement[]
+
+  @@index([fermeId])
+  @@index([dateProgrammee])
+  @@index([statut])
+  @@index([parcelleId])
+  @@index([cultureId])
+  @@map("calendrier_activites")
+}
+
+/// Employés affectés à une activité (liaison plusieurs-à-plusieurs).
+model ActiviteEmploye {
+  id         String   @id @default(cuid())
+  activiteId String
+  employeId  String
+  createdAt  DateTime @default(now())
+
+  activite CalendrierActivite @relation(fields: [activiteId], references: [id], onDelete: Cascade)
+  employe  Employe            @relation(fields: [employeId], references: [id], onDelete: Cascade)
+
+  @@unique([activiteId, employeId])
+  @@index([activiteId])
+  @@index([employeId])
+  @@map("activite_employes")
+}
+
+/// Fil de commentaires d'une activité (journal d'échanges).
+model CommentaireActivite {
+  id         String   @id @default(cuid())
+  activiteId String
+  auteurId   String?
+  contenu    String
+  createdAt  DateTime @default(now())
+
+  activite CalendrierActivite @relation(fields: [activiteId], references: [id], onDelete: Cascade)
+  auteur   Utilisateur?       @relation("AuteurCommentaireActivite", fields: [auteurId], references: [id], onDelete: SetNull)
+
+  @@index([activiteId])
+  @@map("commentaires_activite")
+}
+
+// ============================================================================
+// MODULE 6 — EMPLOYÉS
+// ============================================================================
+
+model Employe {
+  id           String         @id @default(cuid())
+  fermeId      String
+  prenom       String
+  nom          String
+  adresse      String?
+  telephone    String?
+  email        String?
+  fonction     String
+  salaire      Decimal        @db.Decimal(14, 2)
+  frequenceSalaire String     @default("MENSUEL")
+  typeContrat  TypeContrat
+  dateEmbauche DateTime
+  dateFin      DateTime?
+  statut       StatutEmploye  @default(ACTIF)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  ferme       Ferme               @relation(fields: [fermeId], references: [id], onDelete: Cascade)
+  contrats    Contrat[]
+  presences   Presence[]
+  conges      Conge[]
+  heuresSupplementaires HeureSupplementaire[]
+  paiements   PaiementEmploye[]
+  recoltes    Recolte[]           @relation("ResponsableRecolte")
+  utilisationsEquipement UtilisationEquipement[]
+  equipementsResponsable Equipement[]        @relation("ResponsableEquipement")
+  activitesAffectees     ActiviteEmploye[]
+
+  @@index([fermeId])
+  @@index([statut])
+  @@map("employes")
+}
+
+model Contrat {
+  id          String      @id @default(cuid())
+  employeId   String
+  type        TypeContrat
+  dateDebut   DateTime
+  dateFin     DateTime?
+  termes      String?
+  documentId  String?
+  createdAt   DateTime    @default(now())
+
+  employe Employe @relation(fields: [employeId], references: [id], onDelete: Cascade)
+
+  @@index([employeId])
+  @@map("contrats")
+}
+
+model Presence {
+  id         String         @id @default(cuid())
+  employeId  String
+  fermeId    String
+  date       DateTime       @db.Date
+  statut     StatutPresence
+  heureEntree String?
+  heureSortie String?
+  notes      String?
+  enregistreVia String      @default("MANUEL")
+  createdAt  DateTime       @default(now())
+
+  employe Employe @relation(fields: [employeId], references: [id], onDelete: Cascade)
+  ferme   Ferme   @relation(fields: [fermeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeId, date])
+  @@index([fermeId, date])
+  @@map("presences")
+}
+
+model Conge {
+  id          String       @id @default(cuid())
+  employeId   String
+  type        TypeConge
+  dateDebut   DateTime
+  dateFin     DateTime
+  statut      StatutConge  @default(EN_ATTENTE)
+  motif       String?
+  approuvePar String?
+  createdAt   DateTime     @default(now())
+
+  employe Employe @relation(fields: [employeId], references: [id], onDelete: Cascade)
+
+  @@index([employeId])
+  @@index([statut])
+  @@map("conges")
+}
+
+model HeureSupplementaire {
+  id          String   @id @default(cuid())
+  employeId   String
+  date        DateTime @db.Date
+  heures      Decimal  @db.Decimal(6, 2)
+  tauxHoraire Decimal? @db.Decimal(10, 2)
+  approuvePar String?
+  createdAt   DateTime @default(now())
+
+  employe Employe @relation(fields: [employeId], references: [id], onDelete: Cascade)
+
+  @@index([employeId])
+  @@map("heures_supplementaires")
+}
+
+model PaiementEmploye {
+  id            String         @id @default(cuid())
+  employeId     String
+  fermeId       String
+  montant       Decimal        @db.Decimal(14, 2)
+  periode       String
+  datePaiement  DateTime
+  methode       MethodePaiement
+  statut        StatutPaiement @default(EN_ATTENTE)
+  transactionId String?        @unique
+  createdAt     DateTime       @default(now())
+
+  employe     Employe      @relation(fields: [employeId], references: [id], onDelete: Cascade)
+  ferme       Ferme        @relation(fields: [fermeId], references: [id], onDelete: Cascade)
+  transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+
+  @@index([employeId])
+  @@index([fermeId])
+  @@map("paiements_employes")
+}
+
+// ============================================================================
+// MODULE 7 — ÉQUIPEMENTS
+// ============================================================================
+
+model Equipement {
+  id            String           @id @default(cuid())
+  fermeId       String
+  nom           String
+  type          TypeEquipement
+  marque        String?
+  modele        String?
+  numeroSerie   String?
+  etat          EtatEquipement   @default(BON)
+  dateAchat     DateTime?
+  coutAchat     Decimal?         @db.Decimal(14, 2)
+  localisation  String?
+  responsableId String?
+  notes         String?
+  statut        StatutEquipement @default(OPERATIONNEL)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  ferme        Ferme                    @relation(fields: [fermeId], references: [id], onDelete: Cascade)
+  responsable  Employe?                 @relation("ResponsableEquipement", fields: [responsableId], references: [id], onDelete: SetNull)
+  entretiens   EntretienEquipement[]
+  consommations ConsommationCarburant[]
+  utilisations UtilisationEquipement[]
+
+  @@unique([fermeId, numeroSerie])
+  @@index([fermeId])
+  @@index([type])
+  @@index([statut])
+  @@index([etat])
+  @@index([responsableId])
+  @@map("equipements")
+}
+
+model EntretienEquipement {
+  id             String           @id @default(cuid())
+  equipementId   String
+  type           TypeEntretien
+  statut         StatutEntretien  @default(PLANIFIE)
+  dateEntretien  DateTime
+  description    String?
+  cout           Decimal?         @db.Decimal(14, 2)
+  piecesUtilisees String[]
+  effectuePar    String?
+  prochaineEcheance DateTime?
+  createdAt      DateTime         @default(now())
+
+  equipement Equipement @relation(fields: [equipementId], references: [id], onDelete: Cascade)
+
+  @@index([equipementId])
+  @@index([statut])
+  @@index([prochaineEcheance])
+  @@map("entretiens_equipement")
+}
+
+model ConsommationCarburant {
+  id           String   @id @default(cuid())
+  equipementId String
+  date         DateTime
+  quantite     Decimal  @db.Decimal(10, 3)
+  unite        String   @default("L")
+  cout         Decimal? @db.Decimal(14, 2)
+  compteur     Decimal? @db.Decimal(12, 2)
+  createdAt    DateTime @default(now())
+
+  equipement Equipement @relation(fields: [equipementId], references: [id], onDelete: Cascade)
+
+  @@index([equipementId])
+  @@map("consommations_carburant")
+}
+
+model UtilisationEquipement {
+  id           String   @id @default(cuid())
+  equipementId String
+  activiteId   String?
+  operateurId  String?
+  date         DateTime
+  heuresUtilisation Decimal @db.Decimal(8, 2)
+  notes        String?
+  createdAt    DateTime @default(now())
+
+  equipement Equipement           @relation(fields: [equipementId], references: [id], onDelete: Cascade)
+  activite   CalendrierActivite?  @relation(fields: [activiteId], references: [id], onDelete: SetNull)
+  operateur  Employe?             @relation(fields: [operateurId], references: [id], onDelete: SetNull)
+
+  @@index([equipementId])
+  @@index([activiteId])
+  @@map("utilisations_equipement")
+}
+
+// ============================================================================
+// MODULE 8 — STOCKS
+// ============================================================================
+
+model CategorieStock {
+  id        String             @id @default(cuid())
+  fermeId   String
+  nom       String
+  type      TypeCategorieStock
+  createdAt DateTime           @default(now())
+
+  ferme   Ferme          @relation(fields: [fermeId], references: [id], onDelete: Cascade)
+  articles ArticleStock[]
+
+  @@unique([fermeId, nom])
+  @@index([fermeId])
+  @@map("categories_stock")
+}
+
+model ArticleStock {
+  id              String   @id @default(cuid())
+  fermeId         String
+  categorieId     String
+  nom             String
+  sku             String?
+  unite           String
+  quantiteStock   Decimal  @db.Decimal(14, 3) @default(0)
+  seuilMinimum    Decimal  @db.Decimal(14, 3) @default(0)
+  coutUnitaire    Decimal  @db.Decimal(14, 2) @default(0)
+  fournisseur     String?
+  dateExpiration  DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  ferme      Ferme               @relation(fields: [fermeId], references: [id], onDelete: Cascade)
+  categorie  CategorieStock      @relation(fields: [categorieId], references: [id])
+  mouvements MouvementStock[]
+  alertes    AlerteStock[]
+
+  @@unique([fermeId, sku])
+  @@index([fermeId])
+  @@index([categorieId])
+  @@map("articles_stock")
+}
+
+model MouvementStock {
+  id              String             @id @default(cuid())
+  articleId       String
+  type            TypeMouvementStock
+  quantite        Decimal            @db.Decimal(14, 3)
+  coutUnitaire    Decimal?           @db.Decimal(14, 2)
+  motif           String?
+  activiteLieeId  String?
+  effectuePar     String?
+  dateMouvement   DateTime           @default(now())
+  createdAt       DateTime           @default(now())
+
+  article ArticleStock @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@index([articleId])
+  @@index([dateMouvement])
+  @@index([type])
+  @@map("mouvements_stock")
+}
+
+model AlerteStock {
+  id           String            @id @default(cuid())
+  articleId    String
+  niveau       NiveauAlerteStock
+  message      String
+  declencheeLe DateTime          @default(now())
+  resolueLe    DateTime?
+
+  article ArticleStock @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@index([articleId])
+  @@index([resolueLe])
+  @@map("alertes_stock")
+}
+
+// ============================================================================
+// MODULE 9 — FINANCES (ERP)
+// ============================================================================
+
+model CategorieFinanciere {
+  id         String            @id @default(cuid())
+  fermeId    String
+  nom        String
+  type       TypeTransaction
+  parentId   String?
+  createdAt  DateTime          @default(now())
+
+  ferme        Ferme                 @relation(fields: [fermeId], references: [id], onDelete: Cascade)
+  parent       CategorieFinanciere?  @relation("SousCategories", fields: [parentId], references: [id], onDelete: SetNull)
+  sousCategories CategorieFinanciere[] @relation("SousCategories")
+  transactions Transaction[]
+  budgets      Budget[]
+
+  @@unique([fermeId, nom, type])
+  @@index([fermeId])
+  @@map("categories_financieres")
+}
+
+model Transaction {
+  id                String          @id @default(cuid())
+  fermeId           String
+  categorieId       String
+  type              TypeTransaction
+  montant           Decimal         @db.Decimal(14, 2)
+  devise            String          @default("HTG")
+  dateTransaction    DateTime
+  description       String?
+  methode           MethodePaiement?
+  entiteLieeType    String?
+  entiteLieeId      String?
+  creePar           String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  ferme     Ferme                @relation(fields: [fermeId], references: [id], onDelete: Cascade)
+  categorie CategorieFinanciere  @relation(fields: [categorieId], references: [id])
+  paiementsEmployes PaiementEmploye[]
+
+  @@index([fermeId])
+  @@index([categorieId])
+  @@index([dateTransaction])
+  @@index([type])
+  @@map("transactions")
+}
+
+model Budget {
+  id          String   @id @default(cuid())
+  fermeId     String
+  categorieId String?
+  periode     String   // format "YYYY-MM" ou "YYYY"
+  montant     Decimal  @db.Decimal(14, 2)
+  createdAt   DateTime @default(now())
+
+  ferme     Ferme                @relation(fields: [fermeId], references: [id], onDelete: Cascade)
+  categorie CategorieFinanciere? @relation(fields: [categorieId], references: [id], onDelete: SetNull)
+
+  @@unique([fermeId, categorieId, periode])
+  @@index([fermeId])
+  @@map("budgets")
+}
+
+// ============================================================================
+// MODULE 10 — IRRIGATION
+// ============================================================================
+
+model SystemeIrrigation {
+  id        String                  @id @default(cuid())
+  fermeId   String
+  nom       String
+  type      TypeIrrigation
+  statut    StatutSystemeIrrigation @default(ACTIF)
+  createdAt DateTime                @default(now())
+
+  ferme    Ferme                        @relation(fields: [fermeId], references: [id], onDelete: Cascade)
+  parcelles ParcelleSystemeIrrigation[]
+  pompes   Pompe[]
+  planifications PlanificationIrrigation[]
+
+  @@index([fermeId])
+  @@map("systemes_irrigation")
+}
+
+/// Join table : un système d'irrigation peut couvrir plusieurs parcelles,
+/// une parcelle peut (rarement) être couverte par plusieurs systèmes.
+model ParcelleSystemeIrrigation {
+  id                  String @id @default(cuid())
+  parcelleId          String
+  systemeIrrigationId String
+
+  parcelle          Parcelle          @relation(fields: [parcelleId], references: [id], onDelete: Cascade)
+  systemeIrrigation SystemeIrrigation @relation(fields: [systemeIrrigationId], references: [id], onDelete: Cascade)
+
+  @@unique([parcelleId, systemeIrrigationId])
+  @@map("parcelle_systeme_irrigation")
+}
+
+model Pompe {
+  id                  String   @id @default(cuid())
+  systemeIrrigationId String
+  nom                 String
+  puissance           String?
+  statut              StatutEquipement @default(OPERATIONNEL)
+  createdAt           DateTime @default(now())
+
+  systemeIrrigation SystemeIrrigation @relation(fields: [systemeIrrigationId], references: [id], onDelete: Cascade)
+  releves           RelevePompe[]
+
+  @@index([systemeIrrigationId])
+  @@map("pompes")
+}
+
+model RelevePompe {
+  id                 String   @id @default(cuid())
+  pompeId            String
+  date               DateTime
+  pression           Decimal? @db.Decimal(8, 2)
+  debit              Decimal? @db.Decimal(10, 2)
+  dureeMinutes       Int?
+  consommationEau    Decimal? @db.Decimal(12, 3)
+  enregistrePar      String?
+  createdAt          DateTime @default(now())
+
+  pompe Pompe @relation(fields: [pompeId], references: [id], onDelete: Cascade)
+
+  @@index([pompeId])
+  @@index([date])
+  @@map("releves_pompe")
+}
+
+model PlanificationIrrigation {
+  id                  String   @id @default(cuid())
+  systemeIrrigationId String
+  joursSemaine        Int[]    // 0=dimanche ... 6=samedi
+  heureDebut          String
+  dureeMinutes         Int
+  actif               Boolean  @default(true)
+  createdAt           DateTime @default(now())
+
+  systemeIrrigation SystemeIrrigation @relation(fields: [systemeIrrigationId], references: [id], onDelete: Cascade)
+
+  @@index([systemeIrrigationId])
+  @@map("planifications_irrigation")
+}
+
+// ============================================================================
+// MODULE 11 — RÉCOLTES
+// ============================================================================
+
+model Recolte {
+  id                String              @id @default(cuid())
+  fermeId           String
+  cultureId         String
+  parcelleId        String
+  dateRecolte       DateTime
+  quantite          Decimal             @db.Decimal(14, 3)
+  unite             String
+  qualite           String?
+  responsableId     String?
+  destination       DestinationRecolte
+  rendementEstime   Decimal?            @db.Decimal(14, 3)
+  rendementReel     Decimal?            @db.Decimal(14, 3)
+  quantitePerte     Decimal?            @db.Decimal(14, 3)
+  notes             String?
+  createdAt         DateTime            @default(now())
+
+  ferme       Ferme        @relation(fields: [fermeId], references: [id], onDelete: Cascade)
+  culture     Culture      @relation(fields: [cultureId], references: [id], onDelete: Cascade)
+  parcelle    Parcelle     @relation(fields: [parcelleId], references: [id], onDelete: Cascade)
+  responsable Employe?     @relation("ResponsableRecolte", fields: [responsableId], references: [id], onDelete: SetNull)
+  lignesCommande LigneCommande[]
+
+  @@index([fermeId])
+  @@index([cultureId])
+  @@index([parcelleId])
+  @@index([dateRecolte])
+  @@map("recoltes")
+}
+
+// ============================================================================
+// MODULE 12 — VENTES
+// ============================================================================
+
+model Client {
+  id        String   @id @default(cuid())
+  fermeId   String
+  nom       String
+  contact   String?
+  telephone String?
+  email     String?
+  adresse   String?
+  createdAt DateTime @default(now())
+
+  ferme     Ferme     @relation(fields: [fermeId], references: [id], onDelete: Cascade)
+  commandes Commande[]
+
+  @@index([fermeId])
+  @@map("clients")
+}
+
+model Commande {
+  id              String          @id @default(cuid())
+  fermeId         String
+  clientId        String
+  dateCommande    DateTime        @default(now())
+  statut          StatutCommande  @default(EN_ATTENTE)
+  dateLivraison   DateTime?
+  adresseLivraison String?
+  montantTotal    Decimal         @db.Decimal(14, 2) @default(0)
+  statutPaiement  StatutPaiement  @default(EN_ATTENTE)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  ferme    Ferme            @relation(fields: [fermeId], references: [id], onDelete: Cascade)
+  client   Client           @relation(fields: [clientId], references: [id])
+  lignes   LigneCommande[]
+  paiements PaiementVente[]
+
+  @@index([fermeId])
+  @@index([clientId])
+  @@index([statut])
+  @@map("commandes")
+}
+
+model LigneCommande {
+  id           String   @id @default(cuid())
+  commandeId   String
+  recolteId    String?
+  nomProduit   String
+  quantite     Decimal  @db.Decimal(14, 3)
+  unite        String
+  prixUnitaire Decimal  @db.Decimal(14, 2)
+  sousTotal    Decimal  @db.Decimal(14, 2)
+
+  commande Commande @relation(fields: [commandeId], references: [id], onDelete: Cascade)
+  recolte  Recolte? @relation(fields: [recolteId], references: [id], onDelete: SetNull)
+
+  @@index([commandeId])
+  @@index([recolteId])
+  @@map("lignes_commande")
+}
+
+model PaiementVente {
+  id           String          @id @default(cuid())
+  commandeId   String
+  montant      Decimal         @db.Decimal(14, 2)
+  methode      MethodePaiement
+  datePaiement DateTime        @default(now())
+  reference    String?
+  createdAt    DateTime        @default(now())
+
+  commande Commande @relation(fields: [commandeId], references: [id], onDelete: Cascade)
+
+  @@index([commandeId])
+  @@map("paiements_vente")
+}
+
+// ============================================================================
+// MODULE 13 — DOCUMENTS (rattachement polymorphe)
+// ============================================================================
+
+model Document {
+  id           String         @id @default(cuid())
+  fermeId      String
+  type         TypeDocument
+  titre        String
+  fichierUrl   String
+  typeMime     String?
+  tailleOctets Int?
+  entiteType   EntiteDocument
+  entiteId     String
+  latitude     Decimal?       @db.Decimal(10, 7)
+  longitude    Decimal?       @db.Decimal(10, 7)
+  uploadePar   String?
+  createdAt    DateTime       @default(now())
+
+  ferme       Ferme        @relation(fields: [fermeId], references: [id], onDelete: Cascade)
+  uploadeur   Utilisateur? @relation("UploadeurDocument", fields: [uploadePar], references: [id], onDelete: SetNull)
+
+  @@index([fermeId])
+  @@index([entiteType, entiteId])
+  @@index([type])
+  @@map("documents")
+}
+
+// ============================================================================
+// MODULE 14 — RAPPORTS
+// ============================================================================
+
+/// Journal des exports générés (traçabilité + re-téléchargement rapide).
+model RapportExport {
+  id           String        @id @default(cuid())
+  fermeId      String
+  utilisateurId String
+  typeRapport  TypeRapport
+  format       FormatExport
+  parametres   Json?
+  fichierUrl   String?
+  genereLe     DateTime      @default(now())
+
+  ferme       Ferme       @relation(fields: [fermeId], references: [id], onDelete: Cascade)
+  utilisateur Utilisateur @relation(fields: [utilisateurId], references: [id])
+
+  @@index([fermeId])
+  @@index([utilisateurId])
+  @@index([typeRapport])
+  @@map("rapports_export")
+}
+
+// ============================================================================
+// MODULE 16 — NOTIFICATIONS
+// ============================================================================
+
+model Notification {
+  id               String            @id @default(cuid())
+  fermeId          String
+  utilisateurId    String
+  type             TypeNotification
+  titre            String
+  message          String
+  estLue           Boolean           @default(false)
+  sourceEntiteType String?
+  sourceEntiteId   String?
+  createdAt        DateTime          @default(now())
+
+  ferme       Ferme       @relation(fields: [fermeId], references: [id], onDelete: Cascade)
+  utilisateur Utilisateur @relation(fields: [utilisateurId], references: [id], onDelete: Cascade)
+
+  @@index([utilisateurId, estLue])
+  @@index([fermeId])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// ============================================================================
+// APPLICATION MOBILE — SYNCHRONISATION HORS LIGNE
+// ============================================================================
+
+/// Un enregistrement par couple (utilisateur, appareil), pour suivre l'état
+/// de synchronisation différée (mode hors ligne du cahier des charges).
+model AppareilMobile {
+  id               String           @id @default(cuid())
+  utilisateurId    String
+  identifiantAppareil String        @unique
+  plateforme       String
+  dernierSyncLe    DateTime?
+  statutSync       StatutSyncMobile @default(EN_ATTENTE)
+  createdAt        DateTime         @default(now())
+
+  utilisateur Utilisateur @relation(fields: [utilisateurId], references: [id], onDelete: Cascade)
+
+  @@index([utilisateurId])
+  @@map("appareils_mobiles")
+}

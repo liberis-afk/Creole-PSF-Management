@@ -1,0 +1,14 @@
+import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+import type { AuthenticatedRequest, AuthenticatedUser } from '../interfaces/authenticated-request.interface';
+
+/**
+ * Évite de répéter `const user = req.user as AuthenticatedUser` dans chaque
+ * contrôleur. Usage :
+ *   getMe(@CurrentUser() user: AuthenticatedUser) { ... }
+ */
+export const CurrentUser = createParamDecorator(
+  (_data: unknown, ctx: ExecutionContext): AuthenticatedUser => {
+    const request = ctx.switchToHttp().getRequest<AuthenticatedRequest>();
+    return request.user;
+  },
+);
