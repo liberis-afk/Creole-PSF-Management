@@ -1,0 +1,33 @@
+{
+  "name": "Creole PSF Manage",
+
+  "// Deux fichiers compose fusionnés : la base PostGIS (racine) + le conteneur applicatif (ci-dessous).": "",
+  "dockerComposeFile": ["../docker-compose.yml", "docker-compose.yml"],
+  "service": "app",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+
+  "// Node est fourni par l'image de service 'app' (Node 20).": "",
+
+  "forwardPorts": [3000, 3001, 5432],
+  "portsAttributes": {
+    "3000": { "label": "Interface (Next.js)", "onAutoForward": "openPreview" },
+    "3001": { "label": "API (NestJS)", "onAutoForward": "silent" },
+    "5432": { "label": "PostgreSQL", "onAutoForward": "silent" }
+  },
+
+  "// Installe tout automatiquement à la création du Codespace.": "",
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "Prisma.prisma",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss"
+      ]
+    }
+  },
+
+  "remoteUser": "node"
+}
