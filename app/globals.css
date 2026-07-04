@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Le fond et la couleur de texte de base réagissent au thème via la classe
+   'dark' sur <html> (stratégie darkMode: 'class'). */
+body {
+  @apply bg-gray-50 text-gray-900 antialiased dark:bg-gray-900 dark:text-gray-100;
+}
